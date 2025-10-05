@@ -1,30 +1,34 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "my-database"
 version = "2025.9.0"
 description = "Sistema de banco de dados simplificado, feito do zero para fins educativos."
-dependencies = []
+authors = [{name = "github.com/sourceunion"}]
+license = {text = "MIT"}
+readme = "README.md"
 requires-python = ">=3.11"
-classifiers = ["Development Status :: 3 - Alpha", "Programming Language :: Python :: 3.11"]
+dependencies = []
 
-[project.urls]
-Homepage = "https://sourceunion.github.io/my-database"
-Repository = "https://github.com/sourceunion/my-database.git"
-Issues = "https://github.com/sourceunion/my-database/issues"
-
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "pylint",
-    "mypy",
-    "black",
-    "isort"
+    "pylint (>=3.3.8,<4.0.0)",
+    "mypy (>=1.18.2,<2.0.0)",
+    "black (>=25.9.0,<26.0.0)",
+    "isort (>=6.1.0,<7.0.0)"
 ]
 
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [
+    {include = "mydb", from="src"}
+]
+
+[tool.pylint.main]
+source-roots = "src/*"
+
 [tool.pylint]
-init-hook = "import sys; sys.path.append('src')"
 disable = [
     "missing-module-docstring",
     "missing-class-docstring",
@@ -42,28 +46,27 @@ recursive = true
 
 [tool.mypy]
 python_version = "3.11"
-pretty = true
-show_error_codes = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-warn_return_any = true
-ignore_missing_imports = true
-namespace_packages = true
-
 mypy_path = "src"
 exclude = '^(\.venv|venv|build|dist|docs|tests)/'
 
-# Strictness options (explicitly included)
+pretty = true
 strict = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
+
 check_untyped_defs = true
-disallow_untyped_calls = true
-disallow_any_unimported = true
-disallow_any_expr = false
 disallow_any_decorated = true
+disallow_any_expr = false
 disallow_any_generics = true
-disallow_subclassing_any = true
+disallow_any_unimported = false
+disallow_incomplete_defs = true
+disallow_subclassing_any = false
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+namespace_packages = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unused_ignores = true
 
 [tool.black]
 line-length = 100
