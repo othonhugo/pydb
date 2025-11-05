@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from mydb.index.in_memory import InMemoryIndex
 from mydb.file import MonolithicStorage
+from mydb.index.in_memory import InMemoryIndex
 from mydb.interface import File
 from mydb.storage.logger import (
     AppendOnlyLogHeader,

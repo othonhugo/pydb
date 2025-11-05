@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from os import SEEK_SET
-from typing import Self, Literal
+from typing import Literal, Self
 
 OpenFileMode = Literal["rb", "ab", "r+b", "a+b", "wb", "w+b"]
 

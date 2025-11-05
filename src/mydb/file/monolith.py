@@ -1,12 +1,16 @@
 from os import SEEK_SET
 from pathlib import Path
-from typing import Self, BinaryIO
+from typing import BinaryIO, Self
 
 from mydb.interface import File, OpenFileMode
 
 
 class MonolithicStorage(File):
+    # pylint: disable=W1514
+
     def __init__(self, tablespace: str, directory: Path | str, mode: OpenFileMode = "rb"):
+        # pylint: disable=R0801
+
         tablespace = tablespace.strip()
 
         if not tablespace:
@@ -80,6 +84,7 @@ class MonolithicStorage(File):
         f.close()
 
     def __enter__(self) -> Self:
+
         if self._file is None or self._file.closed:
             self._file = open(self.path, self._mode)
 

@@ -1,6 +1,6 @@
 from os import SEEK_CUR, SEEK_END, SEEK_SET
 from pathlib import Path
-from re import compile
+from re import compile as compile_re
 from typing import BinaryIO, List, Optional, Self
 
 from mydb.interface import File, OpenFileMode
@@ -9,7 +9,7 @@ from mydb.interface import File, OpenFileMode
 class Segment:
     """Represents a single segment file within a segmented log system."""
 
-    FILENAME_PATTERN = compile(r"^(?P<tablespace>[a-zA-Z0-9_-]+)_(?P<index>\d{10})\.dblog$")
+    FILENAME_PATTERN = compile_re(r"^(?P<tablespace>[a-zA-Z0-9_-]+)_(?P<index>\d{10})\.dblog$")
 
     def __init__(self, index: int, tablespace: str, directory: Path | str):
         if index < 0:
@@ -81,9 +81,13 @@ class Segment:
 
 
 class SegmentedStorage(File):
+    # pylint: disable=W1514,R1732
+
     """Manages a collection of Segment files, providing a continuous, file-like interface for a segmented log system."""
 
     def __init__(self, tablespace: str, directory: Path | str, max_size: int, mode: OpenFileMode = "rb"):
+        # pylint: disable=R0801
+
         if not tablespace:
             raise ValueError("Tablespace cannot be empty.")
 
@@ -302,8 +306,7 @@ class SegmentedStorage(File):
                     f = self._file_handle
 
                     continue
-                else:
-                    break
+                break
 
             chunk_size = bytes_left_in_segment if bytes_to_read == -1 else min(bytes_left_in_segment, bytes_to_read)
 
@@ -361,7 +364,8 @@ class SegmentedStorage(File):
         if not self._segments:
             if "r" in self._mode:
                 raise FileNotFoundError("No segments available to open for reading.")
-            elif "a" in self._mode or "w" in self._mode:
+
+            if "a" in self._mode or "w" in self._mode:
                 self._bump_new_segment()
             else:
                 raise RuntimeError("No segments found and no suitable mode to create one.")

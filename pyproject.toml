@@ -29,6 +29,7 @@ packages = [{ include = "mydb", from = "src" }]
 
 [tool.pylint.main]
 source-roots = "src/"
+max-line-length = 150
 recursive = true
 disable = [
     "missing-module-docstring",
