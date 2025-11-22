@@ -5,7 +5,7 @@ from typing import BinaryIO, Self
 from mydb.interface import File, OpenFileMode
 
 
-class MonolithicStorage(File):
+class MonolithicFile(File):
     # pylint: disable=W1514
 
     def __init__(self, tablespace: str, directory: Path | str, mode: OpenFileMode = "rb"):

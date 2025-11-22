@@ -1,8 +1,8 @@
-from .monolith import MonolithicStorage
-from .segment import Segment, SegmentedStorage
+from .monolith import MonolithicFile
+from .segment import Segment, SegmentedFile
 
 __all__ = [
-    "MonolithicStorage",
+    "MonolithicFile",
     "Segment",
-    "SegmentedStorage",
+    "SegmentedFile",
 ]

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mydb.file import MonolithicStorage
+from mydb.file import MonolithicFile
 from mydb.index.in_memory import InMemoryIndex
 from mydb.interface import File
 from mydb.storage.logger import (
@@ -148,7 +148,7 @@ def log_filepath(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def log_file(log_filepath: Path) -> File:
-    return MonolithicStorage(log_filepath.name, log_filepath.parent, "a+b")
+    return MonolithicFile(log_filepath.name, log_filepath.parent, "a+b")
 
 
 @pytest.fixture
@@ -346,7 +346,7 @@ def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index:
     # ARRANGE
     key = b"any_key"
 
-    log_file = MonolithicStorage(log_filepath.name, log_filepath.parent)
+    log_file = MonolithicFile(log_filepath.name, log_filepath.parent)
     database = AppendOnlyLogStorage(file=log_file, index=in_memory_index)
 
     in_memory_index.set(key, 0)

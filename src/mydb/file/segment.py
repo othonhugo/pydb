@@ -80,7 +80,7 @@ class Segment:
         return self.index < other.index
 
 
-class SegmentedStorage(File):
+class SegmentedFile(File):
     # pylint: disable=W1514,R1732
 
     """Manages a collection of Segment files, providing a continuous, file-like interface for a segmented log system."""
