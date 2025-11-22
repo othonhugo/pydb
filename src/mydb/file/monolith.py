@@ -6,31 +6,13 @@ from mydb.interface import File, OpenFileMode
 
 
 class MonolithicFile(File):
-    # pylint: disable=W1514
-
     def __init__(self, tablespace: str, directory: Path | str, mode: OpenFileMode = "rb"):
-        # pylint: disable=R0801
+        super().__init__(tablespace=tablespace, directory=directory)
 
-        tablespace = tablespace.strip()
-
-        if not tablespace:
-            raise ValueError("Tablespace cannot be empty or whitespace only")
-
-        directory = Path(directory).resolve()
-
-        if not directory.exists():
-            raise FileNotFoundError(f"Directory does not exist: {directory}")
-
-        if not directory.is_dir():
-            raise NotADirectoryError(f"Path exists but is not a directory: {directory}")
-
-        self._tablespace = tablespace
-        self._directory = directory
         self._mode: OpenFileMode = mode
+        self._file: BinaryIO | None = None
 
         self.path.touch(exist_ok=True)
-
-        self._file: BinaryIO | None = None
 
     @property
     def path(self) -> Path:
@@ -84,9 +66,8 @@ class MonolithicFile(File):
         f.close()
 
     def __enter__(self) -> Self:
-
         if self._file is None or self._file.closed:
-            self._file = open(self.path, self._mode)
+            self._file = open(self.path, self._mode)  # pylint: disable=W1514,R1732
 
         return self
 

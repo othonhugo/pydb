@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from os import SEEK_CUR, SEEK_END, SEEK_SET
 from pathlib import Path
 from re import compile as compile_re
@@ -6,31 +7,15 @@ from typing import BinaryIO, List, Optional, Self
 from mydb.interface import File, OpenFileMode
 
 
+@dataclass(frozen=True)
 class Segment:
     """Represents a single segment file within a segmented log system."""
 
     FILENAME_PATTERN = compile_re(r"^(?P<tablespace>[a-zA-Z0-9_-]+)_(?P<index>\d{10})\.dblog$")
 
-    def __init__(self, index: int, tablespace: str, directory: Path | str):
-        if index < 0:
-            raise ValueError("Segment index must be non-negative")
-
-        tablespace = tablespace.strip()
-
-        if not tablespace:
-            raise ValueError("Tablespace cannot be empty or whitespace only")
-
-        directory = Path(directory).resolve()
-
-        if not directory.exists():
-            raise FileNotFoundError(f"Directory does not exist: {directory}")
-
-        if not directory.is_dir():
-            raise NotADirectoryError(f"Path exists but is not a directory: {directory}")
-
-        self.index = index
-        self.tablespace = tablespace
-        self.directory = directory
+    index: int = field(metadata={"min": 0})
+    tablespace: str = field(metadata={"not_empty": True})
+    directory: Path
 
     @property
     def path(self) -> Path:
@@ -81,30 +66,19 @@ class Segment:
 
 
 class SegmentedFile(File):
-    # pylint: disable=W1514,R1732
-
     """Manages a collection of Segment files, providing a continuous, file-like interface for a segmented log system."""
 
     def __init__(self, tablespace: str, directory: Path | str, max_size: int, mode: OpenFileMode = "rb"):
-        # pylint: disable=R0801
-
-        if not tablespace:
-            raise ValueError("Tablespace cannot be empty.")
+        super().__init__(tablespace=tablespace, directory=directory)
 
         if max_size <= 0:
             raise ValueError("max_size must be a positive integer (greater than 0).")
-
-        if mode not in ("rb", "ab", "r+b", "a+b", "wb", "w+b"):
-            raise ValueError(f"Invalid mode: {mode}.")
-
-        self._tablespace = tablespace
-        self._directory = Path(directory)
-        self._max_size = max_size
 
         self._mode: OpenFileMode = mode
         self._file_handle: Optional[BinaryIO] = None
         self._segments: List[Segment] = []
 
+        self._max_size = max_size
         self._current_segment_index = -1
 
         self._directory.mkdir(parents=True, exist_ok=True)
@@ -179,7 +153,7 @@ class SegmentedFile(File):
         if not (active_segment := self.active_segment):
             raise RuntimeError("Failed to activate a new segment after rollover.")
 
-        self._file_handle = open(active_segment.path, self._mode)
+        self._file_handle = open(active_segment.path, self._mode)  # pylint: disable=W1514,R1732
 
         if "a" in self._mode:
             self._file_handle.seek(0, SEEK_END)
@@ -229,7 +203,7 @@ class SegmentedFile(File):
 
             self._current_segment_index = new_segment_index
             active_segment = self._segments[self._current_segment_index]
-            self._file_handle = open(active_segment.path, self._mode)
+            self._file_handle = open(active_segment.path, self._mode)  # pylint: disable=W1514,R1732
 
         self._file_handle.seek(internal_offset, SEEK_SET)
 
@@ -302,7 +276,7 @@ class SegmentedFile(File):
                     if current_segment is None:
                         break
 
-                    self._file_handle = open(current_segment.path, self._mode)
+                    self._file_handle = open(current_segment.path, self._mode)  # pylint: disable=W1514,R1732
                     f = self._file_handle
 
                     continue

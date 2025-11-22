@@ -1,11 +1,34 @@
 from abc import ABC, abstractmethod
 from os import SEEK_SET
+from pathlib import Path
 from typing import Literal, Self
 
 OpenFileMode = Literal["rb", "ab", "r+b", "a+b", "wb", "w+b"]
 
 
 class File(ABC):
+    def __init__(self, tablespace: str, directory: Path | str, mode: OpenFileMode = "rb"):
+        super().__init__()
+
+        tablespace = tablespace.strip()
+
+        if not tablespace:
+            raise ValueError("Tablespace cannot be empty.")
+
+        if mode not in ("rb", "ab", "r+b", "a+b", "wb", "w+b"):
+            raise ValueError(f"Invalid mode: {mode}.")
+
+        directory = Path(directory).resolve()
+
+        if not directory.exists():
+            raise FileNotFoundError(f"Directory does not exist: {directory}")
+
+        if not directory.is_dir():
+            raise NotADirectoryError(f"Path exists but is not a directory: {directory}")
+
+        self._tablespace = tablespace
+        self._directory = directory
+
     @abstractmethod
     def write(self, data: bytes) -> int:
         raise NotImplementedError
