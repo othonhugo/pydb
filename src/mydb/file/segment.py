@@ -1,379 +1,288 @@
-from os import SEEK_CUR, SEEK_END, SEEK_SET
+import os
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from re import compile as compile_re
-from typing import BinaryIO, List, Optional, Self
+from typing import BinaryIO, Final, List, Self
 
 from mydb.interface import File, OpenFileMode
 
+SEGMENT_PATTERN = re.compile(r"^(?P<tablespace>[a-zA-Z0-9_-]+)_(?P<index>\d{10})\.dblog$")
 
+
+@dataclass(frozen=True)
 class Segment:
     """Represents a single segment file within a segmented log system."""
 
-    FILENAME_PATTERN = compile_re(r"^(?P<tablespace>[a-zA-Z0-9_-]+)_(?P<index>\d{10})\.dblog$")
+    index: int
+    tablespace: str
+    directory: Path
 
-    def __init__(self, index: int, tablespace: str, directory: Path | str):
-        if index < 0:
-            raise ValueError("Segment index must be non-negative")
+    _path: Path = field(init=False)
 
-        tablespace = tablespace.strip()
+    def __post_init__(self) -> None:
+        filename = f"{self.tablespace}_{self.index:010d}.dblog"
 
-        if not tablespace:
-            raise ValueError("Tablespace cannot be empty or whitespace only")
-
-        directory = Path(directory).resolve()
-
-        if not directory.exists():
-            raise FileNotFoundError(f"Directory does not exist: {directory}")
-
-        if not directory.is_dir():
-            raise NotADirectoryError(f"Path exists but is not a directory: {directory}")
-
-        self.index = index
-        self.tablespace = tablespace
-        self.directory = directory
+        object.__setattr__(self, "_path", self.directory / filename)
 
     @property
     def path(self) -> Path:
-        filename = f"{self.tablespace}_{self.index:010d}.dblog"
-
-        return self.directory / filename
+        return self._path
 
     @property
     def size(self) -> int:
         try:
-            return self.path.stat().st_size
+            return self._path.stat().st_size
         except FileNotFoundError:
             return 0
 
     @classmethod
-    def from_filepath(cls, filepath: Path, *, directory: Path) -> Self:
-        filepath = filepath.resolve()
-        directory = directory.resolve()
+    def from_filepath(cls, filepath: Path, *, root_directory: Path) -> Self:
+        if not filepath.parent.samefile(root_directory):
+            raise ValueError(f"File {filepath} is not inside {root_directory}")
 
-        if not filepath.exists():
-            raise FileNotFoundError(f"Segment file not found: {filepath}")
-
-        if not filepath.parent.samefile(directory):
-            raise ValueError(f"File {filepath!r} is not within the directory {directory!r}.")
-
-        match = cls.FILENAME_PATTERN.match(filepath.name)
+        match = SEGMENT_PATTERN.match(filepath.name)
 
         if not match:
-            raise ValueError(f"Invalid segment filename format: {filepath.name}")
+            raise ValueError(f"Invalid segment filename: {filepath.name}")
 
-        tablespace = match.group("tablespace")
-        index = int(match.group("index"))
-
-        return cls(index=index, tablespace=tablespace, directory=directory)
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Segment):
-            return NotImplemented
-
-        same_index = self.index == other.index
-        same_tablespace = self.tablespace == other.tablespace
-        same_directory = self.directory.samefile(other.directory.resolve())
-
-        return same_index and same_tablespace and same_directory
+        return cls(index=int(match.group("index")), tablespace=match.group("tablespace"), directory=root_directory)
 
     def __lt__(self, other: Self) -> bool:
         return self.index < other.index
 
 
-class SegmentedStorage(File):
-    # pylint: disable=W1514,R1732
+class SegmentedFile(File):
+    """
+    Manages a collection of Segment files, providing a continuous, file-like interface for a segmented log system.
 
-    """Manages a collection of Segment files, providing a continuous, file-like interface for a segmented log system."""
+    It handles automatic rollover when segments reach max_size and seamless  seeking/reading across segment boundaries.
+    """
 
     def __init__(self, tablespace: str, directory: Path | str, max_size: int, mode: OpenFileMode = "rb"):
-        # pylint: disable=R0801
-
-        if not tablespace:
-            raise ValueError("Tablespace cannot be empty.")
+        super().__init__(tablespace=tablespace, directory=directory, mode=mode)
 
         if max_size <= 0:
-            raise ValueError("max_size must be a positive integer (greater than 0).")
+            raise ValueError("max_size must be > 0")
 
-        if mode not in ("rb", "ab", "r+b", "a+b", "wb", "w+b"):
-            raise ValueError(f"Invalid mode: {mode}.")
+        self._max_size: Final[int] = max_size
 
-        self._tablespace = tablespace
-        self._directory = Path(directory)
-        self._max_size = max_size
-
-        self._mode: OpenFileMode = mode
-        self._file_handle: Optional[BinaryIO] = None
         self._segments: List[Segment] = []
+        self._file: BinaryIO | None = None
 
-        self._current_segment_index = -1
+        self._current_segment_index: int = -1
+        self._current_segment_base_offset: int = 0
 
-        self._directory.mkdir(parents=True, exist_ok=True)
-        self._load_segments()
+    @property
+    def closed(self) -> bool:
+        return self._file is None or self._file.closed
 
-        if "w" in self._mode:
-            self._delete_all_segments()
-            self._bump_new_segment()
+    def _get_handle_or_raise(self) -> BinaryIO:
+        if self._file is None or self._file.closed:
+            raise RuntimeError(f"SegmentedFile '{self._tablespace}' is not open.")
 
-        elif not self._segments:
-            if "a" in self._mode:
-                self._bump_new_segment()
-            else:
-                raise FileNotFoundError(f"No log segments found in '{self._directory}' for reading (mode: '{self._mode}').")
+        return self._file
 
     def _load_segments(self) -> None:
-        self._segments = []
+        """Scans directory for existing segments and populates the internal list."""
+
+        self._segments.clear()
 
         glob_pattern = f"{self._tablespace}_*.dblog"
 
         for filepath in self._directory.glob(glob_pattern):
             try:
-                segment = Segment.from_filepath(filepath, directory=self._directory)
-                self._segments.append(segment)
-            except (ValueError, FileNotFoundError):
-                pass
-
-        self._segments.sort()
-
-    def _create_new_segment(self, index: int) -> Segment:
-        new_segment = Segment(index=index, tablespace=self._tablespace, directory=self._directory)
-        new_segment.path.touch()
-
-        self._segments.append(new_segment)
-        self._segments.sort()
-
-        return new_segment
-
-    def _bump_new_segment(self) -> Segment:
-        new_segment_index = (self._segments[-1].index + 1) if self._segments else 0
-        new_segment = self._create_new_segment(new_segment_index)
-
-        self._current_segment_index = self._segments.index(new_segment)
-
-        return new_segment
-
-    def _delete_all_segments(self) -> None:
-        pattern = f"{self._tablespace}_*.dblog"
-
-        for filepath in self._directory.glob(pattern):
-            try:
-                filepath.unlink(missing_ok=True)
-            except OSError as e:
-                raise OSError(f"Failed to delete segment file '{filepath.name}': {e}") from e
-
-        self._segments.clear()
-        self._current_segment_index = -1
-
-    def _ensure_file_open(self) -> BinaryIO:
-        if self._file_handle is None or self._file_handle.closed:
-            raise RuntimeError("MonolithicStorage is not opened.")
-
-        return self._file_handle
-
-    def _rollover(self) -> None:
-        if self._file_handle:
-            self._file_handle.close()
-            self._file_handle = None
-
-        self._bump_new_segment()
-
-        if not (active_segment := self.active_segment):
-            raise RuntimeError("Failed to activate a new segment after rollover.")
-
-        self._file_handle = open(active_segment.path, self._mode)
-
-        if "a" in self._mode:
-            self._file_handle.seek(0, SEEK_END)
-
-    def _get_global_offset_from_current_position(self) -> int:
-        if self._file_handle is None or self.active_segment is None:
-            return 0
-
-        global_offset = 0
-
-        for i in range(self._current_segment_index):
-            global_offset += self._segments[i].size
-
-        global_offset += self._file_handle.tell()
-
-        return global_offset
-
-    def _set_position_from_global_offset(self, target_global_offset: int) -> int:
-        if not self._segments:
-            if self._file_handle:
-                self.close()
-            return 0
-
-        target_global_offset = max(0, target_global_offset)
-
-        current_accumulated_size = 0
-        new_segment_index = 0
-        internal_offset = 0
-
-        for i, segment in enumerate(self._segments):
-            segment_size = segment.size
-
-            if target_global_offset < current_accumulated_size + segment_size:
-                new_segment_index = i
-                internal_offset = target_global_offset - current_accumulated_size
-
-                break
-            current_accumulated_size += segment_size
-        else:
-            new_segment_index = len(self._segments) - 1
-
-            internal_offset = self._segments[new_segment_index].size
-            target_global_offset = current_accumulated_size
-
-        if self._current_segment_index != new_segment_index or self._file_handle is None or self._file_handle.closed:
-            self.close()
-
-            self._current_segment_index = new_segment_index
-            active_segment = self._segments[self._current_segment_index]
-            self._file_handle = open(active_segment.path, self._mode)
-
-        self._file_handle.seek(internal_offset, SEEK_SET)
-
-        return self._get_global_offset_from_current_position()
-
-    @property
-    def active_segment(self) -> Optional[Segment]:
-        if 0 <= self._current_segment_index < len(self._segments):
-            return self._segments[self._current_segment_index]
-
-        return None
-
-    def write(self, data: bytes) -> int:
-        f = self._ensure_file_open()
-
-        if "r" in self._mode and "w" not in self._mode and "a" not in self._mode:
-            raise IOError(f"Cannot write in read-only mode: {self._mode}")
-
-        total_written = 0
-        remaining = data
-
-        while remaining:
-            current_segment = self.active_segment
-
-            if current_segment is None:
-                raise RuntimeError("No active segment available for writing.")
-
-            space_left = self._max_size - current_segment.size
-
-            if space_left <= 0:
-                self._rollover()
-
+                seg = Segment.from_filepath(filepath, root_directory=self._directory)
+                self._segments.append(seg)
+            except ValueError:
                 continue
 
-            temp_chunk = remaining[:space_left]
-            temp_written = f.write(temp_chunk)
+        self._segments.sort(key=lambda s: s.index)
 
-            total_written += temp_written
-            remaining = remaining[temp_written:]
+    def _activate_segment(self, index: int) -> BinaryIO:
+        """Closes current file (if any) and opens the segment at the specified index (updates base offsets logic)."""
 
-            if current_segment.size >= self._max_size and remaining:
-                self._rollover()
+        if not 0 <= index < len(self._segments):
+            raise IndexError(f"Segment index {index} out of bounds.")
+
+        if self._file and not self._file.closed:
+            self._file.close()
+
+        self._current_segment_index = index
+        segment = self._segments[index]
+
+        self._file = open(segment.path, self._mode)  # pylint: disable=W1514,R1732
+        self._current_segment_base_offset = sum(s.size for s in self._segments[:index])
+
+        return self._file
+
+    def _create_and_activate_next_segment(self) -> BinaryIO:
+        """Creates a new physical segment file, switches to it, and returns the handle."""
+
+        next_index = 0
+
+        if self._segments:
+            next_index = self._segments[-1].index + 1
+
+        new_seg = Segment(index=next_index, tablespace=self._tablespace, directory=self._directory)
+        new_seg.path.touch()
+
+        self._segments.append(new_seg)
+
+        return self._activate_segment(len(self._segments) - 1)
+
+    def _delete_all_segments(self) -> None:
+        """Wipes physical files. Used in 'w' mode."""
+
+        if not self._segments:
+            self._load_segments()
+
+        for seg in self._segments:
+            seg.path.unlink(missing_ok=True)
+
+        self._segments.clear()
+
+        self._current_segment_index = -1
+        self._current_segment_base_offset = 0
+
+    def write(self, data: bytes) -> int:
+        if "r" in self._mode and "+" not in self._mode:
+            raise IOError("File not open for writing")
+
+        handle = self._get_handle_or_raise()
+
+        total_written = 0
+        view = memoryview(data)
+
+        while total_written < len(data):
+            current_pos = handle.tell()
+            space_left = self._max_size - current_pos
+
+            if space_left <= 0:
+                handle = self._create_and_activate_next_segment()
+
+                current_pos = handle.tell()
+                space_left = self._max_size - current_pos
+
+            chunk_size = min(len(data) - total_written, space_left)
+
+            bytes_written = handle.write(view[total_written : total_written + chunk_size])
+            total_written += bytes_written
 
         return total_written
 
     def read(self, size: int = -1) -> bytes:
-        f = self._ensure_file_open()
+        if "w" in self._mode and "+" not in self._mode:
+            raise IOError("File not open for reading")
 
-        if "w" in self._mode and "r" not in self._mode and "a" not in self._mode:
-            raise IOError(f"Cannot read in write-only mode: {self._mode}")
+        handle = self._get_handle_or_raise()
+        chunks: List[bytes] = []
+        bytes_read = 0
 
-        total_read = b""
-        bytes_to_read = size
+        while size == -1 or bytes_read < size:
+            request_size = -1 if size == -1 else (size - bytes_read)
+            chunk = handle.read(request_size)
 
-        while bytes_to_read != 0:
-            current_segment = self.active_segment
+            if chunk:
+                chunks.append(chunk)
+                bytes_read += len(chunk)
 
-            if current_segment is None:
-                break
-
-            bytes_left_in_segment = current_segment.size - f.tell()
-
-            if bytes_left_in_segment <= 0:
+            if not chunk or (size != -1 and len(chunk) < request_size):
                 if self._current_segment_index + 1 < len(self._segments):
-                    self.close()
+                    handle = self._activate_segment(self._current_segment_index + 1)
+                else:
+                    break
 
-                    self._current_segment_index += 1
-                    current_segment = self.active_segment
+        return b"".join(chunks)
 
-                    if current_segment is None:
-                        break
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        handle = self._get_handle_or_raise()
 
-                    self._file_handle = open(current_segment.path, self._mode)
-                    f = self._file_handle
+        total_size = sum(s.size for s in self._segments)
+        target_global_offset = 0
 
-                    continue
-                break
-
-            chunk_size = bytes_left_in_segment if bytes_to_read == -1 else min(bytes_left_in_segment, bytes_to_read)
-
-            if chunk_size <= 0:
-                break
-
-            chunk = f.read(chunk_size)
-            total_read += chunk
-
-            if bytes_to_read != -1:
-                bytes_to_read -= len(chunk)
-
-            if len(chunk) < chunk_size:
-                break
-
-        return total_read
-
-    def seek(self, offset: int, whence: int = SEEK_SET) -> int:
-        self._ensure_file_open()
-
-        if whence == SEEK_SET:
+        if whence == os.SEEK_SET:
             target_global_offset = offset
-
-        elif whence == SEEK_CUR:
-            current_global_offset = self._get_global_offset_from_current_position()
-            target_global_offset = current_global_offset + offset
-
-        elif whence == SEEK_END:
-            total_log_size = sum(s.size for s in self._segments)
-            target_global_offset = total_log_size + offset
-
+        elif whence == os.SEEK_CUR:
+            target_global_offset = self.tell() + offset
+        elif whence == os.SEEK_END:
+            target_global_offset = total_size + offset
         else:
-            raise ValueError(f"Invalid whence value: {whence}")
+            raise ValueError(f"Invalid whence: {whence}")
 
-        return self._set_position_from_global_offset(target_global_offset)
+        target_global_offset = max(0, target_global_offset)
+
+        current_seg = self._segments[self._current_segment_index]
+        curr_start = self._current_segment_base_offset
+        curr_end = curr_start + current_seg.size
+
+        if curr_start <= target_global_offset <= curr_end:
+            handle.seek(target_global_offset - curr_start)
+
+            return target_global_offset
+
+        accumulated = 0
+        found = False
+
+        for i, seg in enumerate(self._segments):
+            seg_size = seg.size
+            if accumulated <= target_global_offset < (accumulated + seg_size):
+                handle = self._activate_segment(i)
+                handle.seek(target_global_offset - accumulated)
+                found = True
+
+                break
+
+            accumulated += seg_size
+
+        if not found:
+            if self._segments:
+                handle = self._activate_segment(len(self._segments) - 1)
+                local_offset = target_global_offset - self._current_segment_base_offset
+
+                handle.seek(local_offset)
+            else:
+                if "w" in self._mode or "a" in self._mode:
+                    self._create_and_activate_next_segment()
+                else:
+                    return 0
+
+        return target_global_offset
 
     def tell(self) -> int:
-        self._ensure_file_open()
-
-        return self._get_global_offset_from_current_position()
+        handle = self._get_handle_or_raise()
+        return self._current_segment_base_offset + handle.tell()
 
     def close(self) -> None:
-        if self._file_handle:
-            self._file_handle.close()
-            self._file_handle = None
+        if self._file and not self._file.closed:
+            self._file.close()
 
-    @property
-    def closed(self) -> bool:
-        return self._file_handle is None or self._file_handle.closed
+        self._file = None
 
     def __enter__(self) -> Self:
-        if self._file_handle:
-            self.close()
+        if self._file is not None:
+            return self
+
+        self._directory.mkdir(parents=True, exist_ok=True)
+
+        if "w" in self._mode:
+            self._delete_all_segments()
+        else:
+            self._load_segments()
+
+        can_create = "w" in self._mode or "a" in self._mode
 
         if not self._segments:
-            if "r" in self._mode:
-                raise FileNotFoundError("No segments available to open for reading.")
+            if not can_create:
+                raise FileNotFoundError(f"No segments found in {self._directory}")
 
-            if "a" in self._mode or "w" in self._mode:
-                self._bump_new_segment()
-            else:
-                raise RuntimeError("No segments found and no suitable mode to create one.")
-
-        if "a" in self._mode:
-            self._set_position_from_global_offset(sum(s.size for s in self._segments))
+            self._create_and_activate_next_segment()
         else:
-            self._set_position_from_global_offset(0)
+            if "a" in self._mode:
+                handle = self._activate_segment(len(self._segments) - 1)
+                handle.seek(0, os.SEEK_END)
+            else:
+                handle = self._activate_segment(0)
+                handle.seek(0, os.SEEK_SET)
 
         return self
 
