@@ -1,8 +1,4 @@
-from .in_memory import (
-    InMemoryIndex,
-    InMemoryIndexError,
-    InMemoryIndexKeyNotFoundError,
-)
+from .in_memory import InMemoryIndex, InMemoryIndexError, InMemoryIndexKeyNotFoundError
 
 __all__ = [
     "InMemoryIndex",

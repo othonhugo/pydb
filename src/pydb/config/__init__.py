@@ -1,8 +1,8 @@
-from .exceptions import PyDBError, StorageError, FileError, IndexError
+from .exceptions import FileError, IndexingError, PyDBError, StorageError
 
 __all__ = [
+    "FileError",
+    "IndexingError",
     "PyDBError",
     "StorageError",
-    "FileError",
-    "IndexError",
 ]

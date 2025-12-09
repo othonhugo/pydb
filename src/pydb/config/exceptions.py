@@ -1,14 +1,14 @@
 class PyDBError(Exception):
-    pass
+    """Base exception for all PyDB errors."""
 
 
 class FileError(PyDBError):
-    pass
+    """Exception raised for file-related errors in PyDB."""
 
 
-class IndexError(PyDBError):
-    pass
+class IndexingError(PyDBError):
+    """Exception raised for index-related errors in PyDB."""
 
 
 class StorageError(PyDBError):
-    pass
+    """Exception raised for storage-related errors in PyDB."""

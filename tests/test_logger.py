@@ -165,7 +165,7 @@ def log_file(log_filepath: Path) -> File:
 @pytest.fixture
 def in_memory_index() -> InMemoryIndex:
     """Provides a new, empty InMemoryIndex instance for each test."""
-    
+
     return InMemoryIndex()
 
 

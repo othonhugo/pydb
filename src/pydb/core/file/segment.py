@@ -26,10 +26,22 @@ class Segment:
 
     @property
     def path(self) -> Path:
+        """Get the full file path for this segment.
+
+        Returns:
+            Path: The absolute path to the segment file.
+        """
+
         return self._path
 
     @property
     def size(self) -> int:
+        """Get the current size of the segment file.
+
+        Returns:
+            int: The size in bytes, or 0 if the file doesn't exist.
+        """
+
         try:
             return self._path.stat().st_size
         except FileNotFoundError:
@@ -37,6 +49,19 @@ class Segment:
 
     @classmethod
     def from_filepath(cls, filepath: Path, *, root_directory: Path) -> Self:
+        """Create a Segment instance from a file path.
+
+        Args:
+            filepath (Path): The path to the segment file.
+            root_directory (Path): The root directory containing the segment.
+
+        Raises:
+            ValueError: If the file is not in the root directory or has an invalid name.
+
+        Returns:
+            Self: A new Segment instance.
+        """
+
         if not filepath.parent.samefile(root_directory):
             raise ValueError(f"File {filepath} is not inside {root_directory}")
 
@@ -48,6 +73,14 @@ class Segment:
         return cls(index=int(match.group("index")), tablespace=match.group("tablespace"), directory=root_directory)
 
     def __lt__(self, other: Self) -> bool:
+        """Compare segments by index for sorting.
+
+        Args:
+            other (Self): Another Segment instance to compare with.
+
+        Returns:
+            bool: True if this segment's index is less than the other's.
+        """
         return self.index < other.index
 
 
@@ -59,6 +92,18 @@ class SegmentedFile(interface.File):
     """
 
     def __init__(self, tablespace: str, directory: Path | str, max_size: int, mode: interface.OpenFileMode = "rb"):
+        """Initialize a segmented file storage.
+
+        Args:
+            tablespace (str): The name of the tablespace.
+            directory (Path | str): The directory where segment files will be stored.
+            max_size (int): Maximum size in bytes for each segment file.
+            mode (interface.OpenFileMode, optional): The file open mode. Defaults to "rb".
+
+        Raises:
+            ValueError: If max_size is less than or equal to 0.
+        """
+
         super().__init__(tablespace=tablespace, directory=directory, mode=mode)
 
         if max_size <= 0:
@@ -74,9 +119,24 @@ class SegmentedFile(interface.File):
 
     @property
     def closed(self) -> bool:
+        """Check if the file is closed.
+
+        Returns:
+            bool: True if the file is closed or not opened, False otherwise.
+        """
+
         return self._file is None or self._file.closed
 
     def _get_handle_or_raise(self) -> BinaryIO:
+        """Get the active file handle or raise an error.
+
+        Raises:
+            RuntimeError: If the SegmentedFile is not open.
+
+        Returns:
+            BinaryIO: The active file handle.
+        """
+
         if self._file is None or self._file.closed:
             raise RuntimeError(f"SegmentedFile '{self._tablespace}' is not open.")
 
@@ -99,7 +159,20 @@ class SegmentedFile(interface.File):
         self._segments.sort(key=lambda s: s.index)
 
     def _activate_segment(self, index: int) -> BinaryIO:
-        """Closes current file (if any) and opens the segment at the specified index (updates base offsets logic)."""
+        """Activate a specific segment by index.
+
+        Closes the current file (if any) and opens the segment at the specified index.
+        Updates the base offset logic for global positioning.
+
+        Args:
+            index (int): The index of the segment to activate.
+
+        Raises:
+            IndexError: If the segment index is out of bounds.
+
+        Returns:
+            BinaryIO: The file handle for the activated segment.
+        """
 
         if not 0 <= index < len(self._segments):
             raise IndexError(f"Segment index {index} out of bounds.")
@@ -116,7 +189,13 @@ class SegmentedFile(interface.File):
         return self._file
 
     def _create_and_activate_next_segment(self) -> BinaryIO:
-        """Creates a new physical segment file, switches to it, and returns the handle."""
+        """Create and activate the next segment file.
+
+        Creates a new physical segment file, switches to it, and returns the handle.
+
+        Returns:
+            BinaryIO: The file handle for the new segment.
+        """
 
         next_index = 0
 
@@ -145,6 +224,22 @@ class SegmentedFile(interface.File):
         self._current_segment_base_offset = 0
 
     def write(self, data: bytes) -> int:
+        """Write bytes to the segmented file.
+
+        Automatically creates new segments when the current segment reaches max_size.
+        Handles writing across segment boundaries.
+
+        Args:
+            data (bytes): The bytes to write to the file.
+
+        Raises:
+            IOError: If the file is not open for writing.
+            RuntimeError: If the file is not open.
+
+        Returns:
+            int: The total number of bytes written.
+        """
+
         if "r" in self._mode and "+" not in self._mode:
             raise IOError("File not open for writing")
 
@@ -171,6 +266,21 @@ class SegmentedFile(interface.File):
         return total_written
 
     def read(self, size: int = -1) -> bytes:
+        """Read bytes from the segmented file.
+
+        Seamlessly reads across segment boundaries if necessary.
+
+        Args:
+            size (int, optional): Number of bytes to read. -1 reads until EOF. Defaults to -1.
+
+        Raises:
+            IOError: If the file is not open for reading.
+            RuntimeError: If the file is not open.
+
+        Returns:
+            bytes: The bytes read from the file.
+        """
+
         if "w" in self._mode and "+" not in self._mode:
             raise IOError("File not open for reading")
 
@@ -195,6 +305,23 @@ class SegmentedFile(interface.File):
         return b"".join(chunks)
 
     def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        """Move the file pointer to a specific position.
+
+        Handles seeking across segment boundaries by calculating global offsets
+        and activating the appropriate segment.
+
+        Args:
+            offset (int): The offset position.
+            whence (int, optional): Reference point for offset (SEEK_SET, SEEK_CUR, SEEK_END). Defaults to SEEK_SET.
+
+        Raises:
+            ValueError: If whence is invalid.
+            RuntimeError: If the file is not open.
+
+        Returns:
+            int: The new absolute position in the file.
+        """
+
         handle = self._get_handle_or_raise()
 
         total_size = sum(s.size for s in self._segments)
@@ -249,16 +376,44 @@ class SegmentedFile(interface.File):
         return target_global_offset
 
     def tell(self) -> int:
+        """Get the current file pointer position.
+
+        Returns the global position across all segments.
+
+        Raises:
+            RuntimeError: If the file is not open.
+
+        Returns:
+            int: The current global position in the file.
+        """
+
         handle = self._get_handle_or_raise()
+
         return self._current_segment_base_offset + handle.tell()
 
     def close(self) -> None:
+        """Close the currently active segment file.
+
+        Safe to call multiple times.
+        """
         if self._file and not self._file.closed:
             self._file.close()
 
         self._file = None
 
     def __enter__(self) -> Self:
+        """Enter the context manager (opens the file).
+
+        Creates the directory if it doesn't exist. In write mode, deletes all existing
+        segments. Loads existing segments or creates a new one as needed.
+
+        Raises:
+            FileNotFoundError: If no segments exist and the mode doesn't allow creation.
+
+        Returns:
+            Self: The SegmentedFile instance.
+        """
+
         if self._file is not None:
             return self
 
@@ -287,4 +442,10 @@ class SegmentedFile(interface.File):
         return self
 
     def __exit__(self, *_: object) -> None:
+        """Exit the context manager (closes the file).
+
+        Args:
+            *_ (object): Exception information (type, value, traceback).
+        """
+
         self.close()
