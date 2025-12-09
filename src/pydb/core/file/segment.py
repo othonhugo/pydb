@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO, Final, List, Self
 
-from pydb.interface import File, OpenFileMode
+from pydb import interface
 
 SEGMENT_PATTERN = re.compile(r"^(?P<tablespace>[a-zA-Z0-9_-]+)_(?P<index>\d{10})\.dblog$")
 
@@ -51,14 +51,14 @@ class Segment:
         return self.index < other.index
 
 
-class SegmentedFile(File):
+class SegmentedFile(interface.File):
     """
     Manages a collection of Segment files, providing a continuous, file-like interface for a segmented log system.
 
     It handles automatic rollover when segments reach max_size and seamless  seeking/reading across segment boundaries.
     """
 
-    def __init__(self, tablespace: str, directory: Path | str, max_size: int, mode: OpenFileMode = "rb"):
+    def __init__(self, tablespace: str, directory: Path | str, max_size: int, mode: interface.OpenFileMode = "rb"):
         super().__init__(tablespace=tablespace, directory=directory, mode=mode)
 
         if max_size <= 0:

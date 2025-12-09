@@ -3,17 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from pydb.file import MonolithicFile
-from pydb.index.in_memory import InMemoryIndex
+from pydb.core.file import MonolithicFile
+from pydb.core.index.in_memory import InMemoryIndex
+from pydb.core.storage import logger
 from pydb.interface import File
-from pydb.storage.logger import (
-    AppendOnlyLogHeader,
-    AppendOnlyLogOperation,
-    AppendOnlyLogPayload,
-    AppendOnlyLogStorage,
-    LogCorruptedError,
-    LogKeyNotFoundError,
-)
 
 EDGE_SCENARIOS = [
     # fmt: off
@@ -159,12 +152,12 @@ def in_memory_index() -> InMemoryIndex:
 
 
 @pytest.fixture
-def log_storage(log_file: File, in_memory_index: InMemoryIndex) -> AppendOnlyLogStorage:
-    return AppendOnlyLogStorage(log_file, in_memory_index)
+def log_storage(log_file: File, in_memory_index: InMemoryIndex) -> logger.AppendOnlyLogStorage:
+    return logger.AppendOnlyLogStorage(log_file, in_memory_index)
 
 
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
-def test_set_then_get_returns_value(log_storage: AppendOnlyLogStorage, key: bytes, value: bytes):
+def test_set_then_get_returns_value(log_storage: logger.AppendOnlyLogStorage, key: bytes, value: bytes) -> None:
     """
     Sets a key-value pair and then immediately retrieves it.
 
@@ -183,7 +176,7 @@ def test_set_then_get_returns_value(log_storage: AppendOnlyLogStorage, key: byte
 
 
 @pytest.mark.parametrize("key, initial_value, updated_value", UPDATE_SCENARIOS)
-def test_get_returns_latest_value_for_key(log_storage: AppendOnlyLogStorage, key: bytes, initial_value: bytes, updated_value: bytes):
+def test_get_returns_latest_value_for_key(log_storage: logger.AppendOnlyLogStorage, key: bytes, initial_value: bytes, updated_value: bytes) -> None:
     """
     Retrieves a key that has been set multiple times.
 
@@ -205,7 +198,7 @@ def test_get_returns_latest_value_for_key(log_storage: AppendOnlyLogStorage, key
 
 
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
-def test_deleted_key_is_inaccessible(log_storage: AppendOnlyLogStorage, key: bytes, value: bytes):
+def test_deleted_key_is_inaccessible(log_storage: logger.AppendOnlyLogStorage, key: bytes, value: bytes) -> None:
     """
     Tries to GET a key after it has been deleted.
 
@@ -221,14 +214,14 @@ def test_deleted_key_is_inaccessible(log_storage: AppendOnlyLogStorage, key: byt
     database.delete(key)
 
     # ASSERT
-    with pytest.raises(LogKeyNotFoundError) as exc_info:
+    with pytest.raises(logger.LogKeyNotFoundError) as exc_info:
         database.get(key)
 
     assert exc_info.value.key == key
 
 
 @pytest.mark.parametrize("key, initial_value, new_value", UPDATE_SCENARIOS)
-def test_set_after_delete_restores_key(log_storage: AppendOnlyLogStorage, key: bytes, initial_value: bytes, new_value: bytes):
+def test_set_after_delete_restores_key(log_storage: logger.AppendOnlyLogStorage, key: bytes, initial_value: bytes, new_value: bytes) -> None:
     """
     Sets a new value for a key that was previously deleted.
 
@@ -249,7 +242,7 @@ def test_set_after_delete_restores_key(log_storage: AppendOnlyLogStorage, key: b
 
 
 @pytest.mark.parametrize("key, _", BASE_SCENARIOS)
-def test_delete_nonexistent_key_does_not_error(log_storage: AppendOnlyLogStorage, key: bytes, _: bytes):
+def test_delete_nonexistent_key_does_not_error(log_storage: logger.AppendOnlyLogStorage, key: bytes, _: bytes) -> None:
     """
     Calls DELETE on a key that has never been set.
 
@@ -266,12 +259,12 @@ def test_delete_nonexistent_key_does_not_error(log_storage: AppendOnlyLogStorage
     except Exception as e:
         pytest.fail(f"Deleting a non-existent key raised an unexpected exception: {e}")
 
-    with pytest.raises(LogKeyNotFoundError):
+    with pytest.raises(logger.LogKeyNotFoundError):
         log_storage.get(key)
 
 
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
-def test_data_persists_across_instances(log_file: File, in_memory_index: InMemoryIndex, key: bytes, value: bytes):
+def test_data_persists_across_instances(log_file: File, in_memory_index: InMemoryIndex, key: bytes, value: bytes) -> None:
     """
     Writes data with one storage instance, then reads it with a new, separate instance.
 
@@ -280,8 +273,8 @@ def test_data_persists_across_instances(log_file: File, in_memory_index: InMemor
     """
 
     # ARRANGE:
-    writer_instance = AppendOnlyLogStorage(file=log_file, index=in_memory_index)
-    reader_instance = AppendOnlyLogStorage(file=log_file, index=in_memory_index)
+    writer_instance = logger.AppendOnlyLogStorage(file=log_file, index=in_memory_index)
+    reader_instance = logger.AppendOnlyLogStorage(file=log_file, index=in_memory_index)
 
     # ACT
     writer_instance.set(key, value)
@@ -292,7 +285,7 @@ def test_data_persists_across_instances(log_file: File, in_memory_index: InMemor
 
 
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
-def test_get_unknown_key_raises_error(log_storage: AppendOnlyLogStorage, key: bytes, value: bytes):
+def test_get_unknown_key_raises_error(log_storage: logger.AppendOnlyLogStorage, key: bytes, value: bytes) -> None:
     """
     Tries to GET a key that was never written to the log.
 
@@ -308,14 +301,14 @@ def test_get_unknown_key_raises_error(log_storage: AppendOnlyLogStorage, key: by
     assert unknown_key != key
 
     # ACT & ASSERT
-    with pytest.raises(LogKeyNotFoundError) as exc_info:
+    with pytest.raises(logger.LogKeyNotFoundError) as exc_info:
         database.get(unknown_key)
 
     assert exc_info.value.key == unknown_key
 
 
 @pytest.mark.parametrize("unknown_key, _", BASE_SCENARIOS)
-def test_get_from_empty_log_raises_error(log_storage: AppendOnlyLogStorage, unknown_key: bytes, _: bytes):
+def test_get_from_empty_log_raises_error(log_storage: logger.AppendOnlyLogStorage, unknown_key: bytes, _: bytes) -> None:
     """
     Tries to GET a key from an empty (zero-byte) log file.
 
@@ -327,13 +320,13 @@ def test_get_from_empty_log_raises_error(log_storage: AppendOnlyLogStorage, unkn
     database = log_storage
 
     # ACT & ASSERT
-    with pytest.raises(LogKeyNotFoundError) as exc_info:
+    with pytest.raises(logger.LogKeyNotFoundError) as exc_info:
         database.get(unknown_key)
 
     assert exc_info.value.key == unknown_key
 
 
-def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index: InMemoryIndex):
+def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index: InMemoryIndex) -> None:
     """
     Attempts to GET a key when the underlying log file does not exist.
 
@@ -347,7 +340,7 @@ def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index:
     key = b"any_key"
 
     log_file = MonolithicFile(log_filepath.name, log_filepath.parent)
-    database = AppendOnlyLogStorage(file=log_file, index=in_memory_index)
+    database = logger.AppendOnlyLogStorage(file=log_file, index=in_memory_index)
 
     in_memory_index.set(key, 0)
 
@@ -361,7 +354,7 @@ def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index:
         database.get(key)
 
 
-def test_truncated_header_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex):
+def test_truncated_header_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
     Reads a log file where a record header is incomplete.
 
@@ -372,7 +365,7 @@ def test_truncated_header_raises_corruption_error(log_file: File, in_memory_inde
     pytest.skip()
 
     # ARRANGE
-    header = AppendOnlyLogHeader(AppendOnlyLogOperation.SET, key_size=10, value_size=20)
+    header = logger.AppendOnlyLogHeader(logger.AppendOnlyLogOperation.SET, key_size=10, value_size=20)
     header_bytes = header.to_bytes()
 
     assert len(header_bytes) >= 5
@@ -383,11 +376,11 @@ def test_truncated_header_raises_corruption_error(log_file: File, in_memory_inde
         f.write(truncated_header)
 
     # ACT & ASSERT
-    with pytest.raises(LogCorruptedError):
-        AppendOnlyLogStorage(file=log_file, index=in_memory_index)
+    with pytest.raises(logger.LogCorruptedError):
+        logger.AppendOnlyLogStorage(file=log_file, index=in_memory_index)
 
 
-def test_truncated_payload_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex):
+def test_truncated_payload_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
     Reads a log file where a record's payload is shorter than specified in its header.
 
@@ -400,8 +393,8 @@ def test_truncated_payload_raises_corruption_error(log_file: File, in_memory_ind
     # ARRANGE
     key, value = b"my-key", b"my-value"
 
-    header = AppendOnlyLogHeader(AppendOnlyLogOperation.SET, key_size=len(key), value_size=len(value))
-    payload = AppendOnlyLogPayload(key=key, value=value)
+    header = logger.AppendOnlyLogHeader(logger.AppendOnlyLogOperation.SET, key_size=len(key), value_size=len(value))
+    payload = logger.AppendOnlyLogPayload(key=key, value=value)
 
     header_bytes = header.to_bytes()
     payload_bytes = payload.to_bytes()
@@ -413,11 +406,11 @@ def test_truncated_payload_raises_corruption_error(log_file: File, in_memory_ind
         f.write(payload_bytes[:-5])
 
     # ACT & ASSERT
-    with pytest.raises(LogCorruptedError):
-        AppendOnlyLogStorage(file=log_file, index=in_memory_index)
+    with pytest.raises(logger.LogCorruptedError):
+        logger.AppendOnlyLogStorage(file=log_file, index=in_memory_index)
 
 
-def test_garbage_data_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex):
+def test_garbage_data_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
     Reads a log file containing random, invalid binary data instead of structured records.
 
@@ -432,11 +425,11 @@ def test_garbage_data_raises_corruption_error(log_file: File, in_memory_index: I
         f.write(os.urandom(100))
 
     # ACT & ASSERT
-    with pytest.raises(LogCorruptedError):
-        AppendOnlyLogStorage(file=log_file, index=in_memory_index)
+    with pytest.raises(logger.LogCorruptedError):
+        logger.AppendOnlyLogStorage(file=log_file, index=in_memory_index)
 
 
-def test_multiple_keys_store_and_retrieve_correctly(log_storage: AppendOnlyLogStorage):
+def test_multiple_keys_store_and_retrieve_correctly(log_storage: logger.AppendOnlyLogStorage) -> None:
     """
     Writes multiple distinct key-value pairs and verifies each one can be retrieved.
 
@@ -455,7 +448,7 @@ def test_multiple_keys_store_and_retrieve_correctly(log_storage: AppendOnlyLogSt
         assert database.get(key) == expected_value
 
 
-def test_key_operations_do_not_affect_others(log_storage: AppendOnlyLogStorage):
+def test_key_operations_do_not_affect_others(log_storage: logger.AppendOnlyLogStorage) -> None:
     """
     Performs operations (SET, DELETE) on one key and then verifies the value of another.
 
@@ -476,7 +469,7 @@ def test_key_operations_do_not_affect_others(log_storage: AppendOnlyLogStorage):
     assert database.get(b"key-2") == b"value-2"
 
 
-def test_directory_as_filepath_raises_error(tmp_path: Path, in_memory_index: InMemoryIndex):
+def test_directory_as_filepath_raises_error(tmp_path: Path, in_memory_index: InMemoryIndex) -> None:
     """
     Initializes the storage engine with a path that points to a directory.
 
@@ -490,11 +483,11 @@ def test_directory_as_filepath_raises_error(tmp_path: Path, in_memory_index: InM
     invalid_file: File
 
     with pytest.raises(IsADirectoryError):
-        database = AppendOnlyLogStorage(file=invalid_file, index=in_memory_index)
+        database = logger.AppendOnlyLogStorage(file=invalid_file, index=in_memory_index)
         database.set(b"some_key", b"some_value")
 
 
-def test_interleaved_operations_maintain_key_integrity(log_storage: AppendOnlyLogStorage):
+def test_interleaved_operations_maintain_key_integrity(log_storage: logger.AppendOnlyLogStorage) -> None:
     """
     Performs a sequence of mixed SET and DELETE operations on multiple keys.
 
@@ -519,7 +512,7 @@ def test_interleaved_operations_maintain_key_integrity(log_storage: AppendOnlyLo
     assert database.get(b"k3") == b"delta"
 
 
-def test_partial_write_does_not_corrupt_existing_data(log_file: File, in_memory_index: InMemoryIndex):
+def test_partial_write_does_not_corrupt_existing_data(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
     Simulates a crash by writing a valid log followed by a partial, incomplete record.
 
@@ -533,7 +526,7 @@ def test_partial_write_does_not_corrupt_existing_data(log_file: File, in_memory_
     valid_key = b"good_key"
     valid_value = b"good_value"
 
-    crashed_instance = AppendOnlyLogStorage(file=log_filepath, index=in_memory_index)
+    crashed_instance = logger.AppendOnlyLogStorage(file=log_filepath, index=in_memory_index)
 
     # ACT & ASSERT
     crashed_instance.set(valid_key, valid_value)
@@ -541,7 +534,7 @@ def test_partial_write_does_not_corrupt_existing_data(log_file: File, in_memory_
     with open(log_filepath, "ab") as f:
         f.write(b"\x00\x01")  # Garbage/partial header
 
-    recovered_instance = AppendOnlyLogStorage(file=log_filepath, index=in_memory_index)
+    recovered_instance = logger.AppendOnlyLogStorage(file=log_filepath, index=in_memory_index)
 
     try:
         retrieved_value = recovered_instance.get(valid_key)

@@ -2,13 +2,13 @@ from os import SEEK_SET
 from pathlib import Path
 from typing import BinaryIO, Final, Self
 
-from pydb.interface import File, OpenFileMode
+from pydb import interface
 
 
-class MonolithicFile(File):
+class MonolithicFile(interface.File):
     """A monolithic file storage implementation where all data is stored in a single file per tablespace."""
 
-    def __init__(self, tablespace: str, directory: Path | str, mode: OpenFileMode = "rb"):
+    def __init__(self, tablespace: str, directory: Path | str, mode: interface.OpenFileMode = "rb"):
         super().__init__(tablespace=tablespace, directory=directory, mode=mode)
 
         self._path: Final[Path] = self._directory / f"{self._tablespace}.dblog"

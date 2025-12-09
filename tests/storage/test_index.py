@@ -1,6 +1,6 @@
 import pytest
 
-from pydb.index import InMemoryIndex, InMemoryIndexKeyNotFoundError
+from pydb.core.index import InMemoryIndex, InMemoryIndexKeyNotFoundError
 
 EDGE_SCENARIOS = [
     # fmt: off
@@ -199,7 +199,7 @@ def in_memory_index() -> InMemoryIndex:
 
 
 @pytest.mark.parametrize("key, offset", BASE_SCENARIOS)
-def test_set_new_key_can_be_retrieved(in_memory_index: InMemoryIndex, key: bytes, offset: int):
+def test_set_new_key_can_be_retrieved(in_memory_index: InMemoryIndex, key: bytes, offset: int) -> None:
     """
     Sets a key with a specific offset for the first time.
 
@@ -218,7 +218,7 @@ def test_set_new_key_can_be_retrieved(in_memory_index: InMemoryIndex, key: bytes
 
 
 @pytest.mark.parametrize("key, initial_offset, updated_offset", UPDATE_SCENARIOS)
-def test_set_existing_key_updates_offset(in_memory_index: InMemoryIndex, key: bytes, initial_offset: int, updated_offset: int):
+def test_set_existing_key_updates_offset(in_memory_index: InMemoryIndex, key: bytes, initial_offset: int, updated_offset: int) -> None:
     """
     Sets a new offset for a key that already exists.
 
@@ -238,7 +238,7 @@ def test_set_existing_key_updates_offset(in_memory_index: InMemoryIndex, key: by
 
 
 @pytest.mark.parametrize("key, offset", BASE_SCENARIOS)
-def test_has_returns_true_for_existing_key(in_memory_index: InMemoryIndex, key: bytes, offset: int):
+def test_has_returns_true_for_existing_key(in_memory_index: InMemoryIndex, key: bytes, offset: int) -> None:
     """
     Calls the `has()` method for a key known to be in the index.
 
@@ -256,7 +256,7 @@ def test_has_returns_true_for_existing_key(in_memory_index: InMemoryIndex, key: 
 
 
 @pytest.mark.parametrize("key, offset", BASE_SCENARIOS)
-def test_deleted_key_is_no_longer_accessible(in_memory_index: InMemoryIndex, key: bytes, offset: int):
+def test_deleted_key_is_no_longer_accessible(in_memory_index: InMemoryIndex, key: bytes, offset: int) -> None:
     """
     Deletes a key that was previously present in the index.
 
@@ -280,7 +280,7 @@ def test_deleted_key_is_no_longer_accessible(in_memory_index: InMemoryIndex, key
 
 
 @pytest.mark.parametrize("key, _", BASE_SCENARIOS)
-def test_get_nonexistent_key_raises_error(in_memory_index: InMemoryIndex, key: bytes, _: int):
+def test_get_nonexistent_key_raises_error(in_memory_index: InMemoryIndex, key: bytes, _: int) -> None:
     """
     Attempts to `get()` a key that has never been set.
 
@@ -298,7 +298,7 @@ def test_get_nonexistent_key_raises_error(in_memory_index: InMemoryIndex, key: b
 
 
 @pytest.mark.parametrize("key, _", BASE_SCENARIOS)
-def test_has_returns_false_for_nonexistent_key(in_memory_index: InMemoryIndex, key: bytes, _: int):
+def test_has_returns_false_for_nonexistent_key(in_memory_index: InMemoryIndex, key: bytes, _: int) -> None:
     """
     Calls the `has()` method for a key known to not be in the index.
 
@@ -313,7 +313,7 @@ def test_has_returns_false_for_nonexistent_key(in_memory_index: InMemoryIndex, k
 
 
 @pytest.mark.parametrize("key, _", BASE_SCENARIOS)
-def test_delete_nonexistent_key_is_silent_and_idempotent(in_memory_index: InMemoryIndex, key: bytes, _: int):
+def test_delete_nonexistent_key_is_silent_and_idempotent(in_memory_index: InMemoryIndex, key: bytes, _: int) -> None:
     """
     Calls `delete()` on a key that is not present in the index.
 
@@ -331,7 +331,7 @@ def test_delete_nonexistent_key_is_silent_and_idempotent(in_memory_index: InMemo
 
 
 @pytest.mark.parametrize("key, initial_offset, updated_offset", UPDATE_SCENARIOS)
-def test_lifecycle_with_edge_case_keys(in_memory_index: InMemoryIndex, key: bytes, initial_offset: int, updated_offset: int):
+def test_lifecycle_with_edge_case_keys(in_memory_index: InMemoryIndex, key: bytes, initial_offset: int, updated_offset: int) -> None:
     """
     Runs the full set -> update -> delete -> get lifecycle for a given key.
 

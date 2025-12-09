@@ -6,9 +6,7 @@ from os import SEEK_END
 from struct import Struct
 from typing import Self
 
-from pydb.core import MyDBError
-from pydb.index import InMemoryIndexKeyNotFoundError
-from pydb.interface import File, Index, StorageEngine
+from pydb import config, interface
 
 
 class AppendOnlyLogOperation(IntEnum):
@@ -16,7 +14,7 @@ class AppendOnlyLogOperation(IntEnum):
     DELETE = 1
 
 
-class LogStorageError(MyDBError):
+class LogStorageError(config.StorageError):
     """Base exception for log storage errors."""
 
 
@@ -98,14 +96,14 @@ class AppendOnlyLogRecord:
     header: AppendOnlyLogHeader
     payload: AppendOnlyLogPayload
 
-    def to_stream(self, stream: File, /) -> int:
+    def to_stream(self, stream: interface.File, /) -> int:
         count = stream.write(self.header.to_bytes())
         count += stream.write(self.payload.to_bytes())
 
         return count
 
     @classmethod
-    def from_stream(cls, stream: File, /) -> Self | None:
+    def from_stream(cls, stream: interface.File, /) -> Self | None:
         offset = stream.tell()
 
         if not (header_bytes := stream.read(AppendOnlyLogHeader.STRUCT.size)):
@@ -133,8 +131,8 @@ class AppendOnlyLogRecord:
             raise LogCorruptedError(offset=offset, cause=e) from e
 
 
-class AppendOnlyLogStorage(StorageEngine):
-    def __init__(self, file: File, index: Index) -> None:
+class AppendOnlyLogStorage(interface.StorageEngine):
+    def __init__(self, file: interface.File, index: interface.Index) -> None:
         self._file = file
         self._index = index
 
@@ -148,7 +146,7 @@ class AppendOnlyLogStorage(StorageEngine):
 
         try:
             offset = self._index.get(key)
-        except InMemoryIndexKeyNotFoundError:
+        except config.IndexError:
             raise LogKeyNotFoundError(key=key) from None
 
         with self._file:

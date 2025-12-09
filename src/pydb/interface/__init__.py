@@ -5,6 +5,6 @@ from .storage import StorageEngine
 __all__ = [
     "File",
     "Index",
-    "StorageEngine",
     "OpenFileMode",
+    "StorageEngine",
 ]

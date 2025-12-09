@@ -1,8 +1,7 @@
-from pydb.core import MyDBError
-from pydb.interface import Index
+from pydb import config, interface
 
 
-class InMemoryIndexError(MyDBError):
+class InMemoryIndexError(config.IndexError):
     """Base exception for in memory index errors."""
 
 
@@ -15,7 +14,7 @@ class InMemoryIndexKeyNotFoundError(InMemoryIndexError):
         super().__init__(f"Key not found: {key!r}")
 
 
-class InMemoryIndex(Index):
+class InMemoryIndex(interface.Index):
     def __init__(self) -> None:
         self._offset_table = dict[bytes, int]()
 
