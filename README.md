@@ -26,6 +26,132 @@ The project is actively being developed with the following components:
 - **Concurrency Control**: Handling multiple simultaneous operations
 - **Recovery Mechanisms**: Data durability and crash recovery
 
+## Getting Started
+
+### Installation
+
+Clone the repository and install the package:
+
+```bash
+git clone https://github.com/othonhugo/pydb.git
+cd pydb
+pip install -e .
+```
+
+### Quick Start
+
+Run the example demonstration:
+
+```bash
+python3 -m pydb
+```
+
+## Usage
+
+Here's a simple example of using **pydb** as a key-value store:
+
+```python
+from tempfile import mkdtemp
+from pydb.core import file, index, storage
+
+dirpath = mkdtemp(prefix="pydb")  # Temporary directory for storage
+
+# Initialize the storage components
+storage_index = index.InMemoryIndex()
+storage_file = file.MonolithicFile("test", dirpath, mode="a+b")
+storage_engine = storage.AppendOnlyLogStorage(storage_file, storage_index)
+
+# Set key-value pairs
+storage_engine.set(b"hello", b"world")
+storage_engine.set(b"hello", b"all")  # Updates the previous value
+
+# Retrieve values
+value = storage_engine.get(b"hello")
+print(f"Value: {value.decode()}")  # Output: Value: all
+```
+
+### Key Components
+
+- **`InMemoryIndex`**: Maintains an in-memory index for fast key lookups
+- **`MonolithicFile`**: Handles file I/O operations for data persistence
+- **`AppendOnlyLogStorage`**: Implements an append-only log storage engine
+
+This simple example demonstrates the fundamental concepts of:
+- Data persistence using append-only logs
+- In-memory indexing for efficient retrieval
+- Key-value storage operations
+
+### Customization
+
+**pydb** is designed to be highly customizable through well-defined interfaces. You can implement your own storage strategies by creating custom implementations of the core abstractions:
+
+#### **`StorageEngine` Interface**
+
+Define how data is stored and retrieved. Implement this to create different storage strategies:
+
+```python
+from pydb.interface import StorageEngine
+
+class MyCustomStorage(StorageEngine):
+    def set(self, key: bytes, value: bytes) -> None: ...
+        # Your custom storage logic
+    
+    def get(self, key: bytes) -> bytes: ...
+        # Your custom retrieval logic
+    
+    def delete(self, key: bytes) -> None: ...
+        # Your custom deletion logic
+```
+
+**Use cases**: Append-only logs for write optimization, B-tree storage for balanced reads/writes, LSM-tree implementations for high write throughput, in-memory stores for maximum speed
+
+#### **`Index` Interface**
+
+Control how keys are indexed for fast lookups:
+
+```python
+from pydb.interface import Index
+
+class MyCustomIndex(Index):
+    def has(self, key: bytes) -> bool: ...
+        # Check if key exists
+    
+    def set(self, key: bytes, offset: int) -> None: ...
+        # Store key-to-offset mapping
+    
+    def get(self, key: bytes) -> int: ...
+        # Retrieve offset for key
+    
+    def delete(self, key: bytes) -> None: ...
+        # Remove key from index
+```
+
+**Use cases**: Hash tables for O(1) lookups, B-tree indexes for range queries, skip lists for probabilistic balancing, persistent indexes for durability across restarts
+
+#### **`File` Interface**
+
+Customize low-level file operations and storage formats:
+
+```python
+from pydb.interface import File
+
+class MyCustomFile(File):
+    def write(self, data: bytes) -> int: ...
+        # Custom write implementation
+    
+    def read(self, size: int = -1) -> bytes: ...
+        # Custom read implementation
+    
+    def seek(self, offset: int, whence: int = 0) -> int: ...
+        # Custom seek implementation
+    
+    # ... implement other required methods
+```
+
+**Use cases**: Segmented files for managing large datasets, compressed storage for space efficiency, encrypted files for data security, memory-mapped I/O for performance optimization
+
+By mixing and matching different implementations of these interfaces, you can experiment with various database architectures and understand how different design choices affect performance, durability, and scalability.
+
 ## Learning Objectives
 
 By exploring this project, you will gain understanding of:
@@ -64,7 +190,3 @@ This project is licensed under the [MIT License](LICENSE).
 ## Acknowledgments
 
 This project is inspired by educational resources on database internals and aims to provide a practical learning experience for understanding how databases work at a fundamental level.
-
----
-
-**Note**: This is a work in progress and under active development. The implementation is intentionally simplified for educational purposes and is not intended for production use.
