@@ -1,3 +1,19 @@
+"""
+Tests for pydb.core.storage.logger.AppendOnlyLogStorage
+
+This module contains comprehensive tests for the AppendOnlyLogStorage component,
+which provides persistent key-value storage using an append-only log structure.
+
+The test suite covers:
+- Core CRUD operations (set, get, delete)
+- Last-write-wins semantics for updates
+- Data persistence across storage instances
+- Edge cases including empty keys/values, binary data, and large payloads
+- Error handling for missing keys and corrupted data
+- Multi-key operations and isolation
+- Durability and crash recovery scenarios
+"""
+
 import os
 from pathlib import Path
 
@@ -136,32 +152,38 @@ SEQUENTIAL_SCENARIOS = [
 
 @pytest.fixture
 def log_filepath(tmp_path: Path) -> Path:
+    """Provides a temporary file path for the log file in each test."""
     return tmp_path / "mydb_test.db"
 
 
 @pytest.fixture
 def log_file(log_filepath: Path) -> File:
+    """Provides a MonolithicFile instance for testing log storage."""
     return MonolithicFile(log_filepath.name, log_filepath.parent, "a+b")
 
 
 @pytest.fixture
 def in_memory_index() -> InMemoryIndex:
-    """Returns a new, empty InMemoryIndex instance for each test."""
-
+    """Provides a new, empty InMemoryIndex instance for each test."""
+    
     return InMemoryIndex()
 
 
 @pytest.fixture
 def log_storage(log_file: File, in_memory_index: InMemoryIndex) -> logger.AppendOnlyLogStorage:
+    """Provides an AppendOnlyLogStorage instance with file and index dependencies."""
+
     return logger.AppendOnlyLogStorage(log_file, in_memory_index)
 
 
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
 def test_set_then_get_returns_value(log_storage: logger.AppendOnlyLogStorage, key: bytes, value: bytes) -> None:
     """
-    Sets a key-value pair and then immediately retrieves it.
+    Test basic set and get operations.
 
-    Verifies the most fundamental write/read cycle (the "happy path") works correctly.
+    Given: An empty AppendOnlyLogStorage
+    When: A key-value pair is set and then retrieved
+    Then: The retrieved value matches the original value
     """
 
     # ARRANGE
@@ -178,10 +200,11 @@ def test_set_then_get_returns_value(log_storage: logger.AppendOnlyLogStorage, ke
 @pytest.mark.parametrize("key, initial_value, updated_value", UPDATE_SCENARIOS)
 def test_get_returns_latest_value_for_key(log_storage: logger.AppendOnlyLogStorage, key: bytes, initial_value: bytes, updated_value: bytes) -> None:
     """
-    Retrieves a key that has been set multiple times.
+    Test last-write-wins semantics for updates.
 
-    Confirms the "last-write-wins" semantics, ensuring the storage returns the value
-    from the most recent SET operation for a given key.
+    Given: An AppendOnlyLogStorage with a key set to an initial value
+    When: The same key is set again with a different value
+    Then: Getting the key returns the most recent value
     """
 
     # ARRANGE
@@ -200,10 +223,11 @@ def test_get_returns_latest_value_for_key(log_storage: logger.AppendOnlyLogStora
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
 def test_deleted_key_is_inaccessible(log_storage: logger.AppendOnlyLogStorage, key: bytes, value: bytes) -> None:
     """
-    Tries to GET a key after it has been deleted.
+    Test deleting a key from storage.
 
-    Ensures the DELETE operation correctly marks a key as unavailable,
-    causing subsequent GET operations to fail as expected.
+    Given: An AppendOnlyLogStorage with a key-value pair set
+    When: The key is deleted
+    Then: Attempting to get the key raises LogKeyNotFoundError
     """
 
     # ARRANGE
@@ -223,9 +247,11 @@ def test_deleted_key_is_inaccessible(log_storage: logger.AppendOnlyLogStorage, k
 @pytest.mark.parametrize("key, initial_value, new_value", UPDATE_SCENARIOS)
 def test_set_after_delete_restores_key(log_storage: logger.AppendOnlyLogStorage, key: bytes, initial_value: bytes, new_value: bytes) -> None:
     """
-    Sets a new value for a key that was previously deleted.
+    Test restoring a deleted key with a new value.
 
-    Verifies that a key can be "resurrected" with a new value after a DELETE operation.
+    Given: An AppendOnlyLogStorage with a key that has been deleted
+    When: The key is set again with a new value
+    Then: The key can be retrieved with the new value
     """
 
     # ARRANGE
@@ -244,10 +270,11 @@ def test_set_after_delete_restores_key(log_storage: logger.AppendOnlyLogStorage,
 @pytest.mark.parametrize("key, _", BASE_SCENARIOS)
 def test_delete_nonexistent_key_does_not_error(log_storage: logger.AppendOnlyLogStorage, key: bytes, _: bytes) -> None:
     """
-    Calls DELETE on a key that has never been set.
+    Test deleting a non-existent key.
 
-    Confirms that deleting a non-existent key is a safe, idempotent operation
-    that does not raise an error.
+    Given: An empty AppendOnlyLogStorage
+    When: Attempting to delete a key that was never set
+    Then: The operation completes without raising an error (idempotent)
     """
 
     # ARRANGE
@@ -266,10 +293,11 @@ def test_delete_nonexistent_key_does_not_error(log_storage: logger.AppendOnlyLog
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
 def test_data_persists_across_instances(log_file: File, in_memory_index: InMemoryIndex, key: bytes, value: bytes) -> None:
     """
-    Writes data with one storage instance, then reads it with a new, separate instance.
+    Test data persistence across storage instances.
 
-    Validates that data is correctly persisted to the file and is not just held
-    in memory, ensuring durability.
+    Given: Data written by one AppendOnlyLogStorage instance
+    When: A new instance is created with the same file
+    Then: The data can be read by the new instance (durability)
     """
 
     # ARRANGE:
@@ -287,9 +315,11 @@ def test_data_persists_across_instances(log_file: File, in_memory_index: InMemor
 @pytest.mark.parametrize("key, value", BASE_SCENARIOS)
 def test_get_unknown_key_raises_error(log_storage: logger.AppendOnlyLogStorage, key: bytes, value: bytes) -> None:
     """
-    Tries to GET a key that was never written to the log.
+    Test getting a key that doesn't exist.
 
-    Verifies that accessing a non-existent key raises the specific `LogKeyNotFoundError`.
+    Given: An AppendOnlyLogStorage with some data
+    When: Attempting to get a key that was never written
+    Then: LogKeyNotFoundError is raised with the correct key
     """
 
     # ARRANGE
@@ -310,10 +340,11 @@ def test_get_unknown_key_raises_error(log_storage: logger.AppendOnlyLogStorage, 
 @pytest.mark.parametrize("unknown_key, _", BASE_SCENARIOS)
 def test_get_from_empty_log_raises_error(log_storage: logger.AppendOnlyLogStorage, unknown_key: bytes, _: bytes) -> None:
     """
-    Tries to GET a key from an empty (zero-byte) log file.
+    Test getting a key from an empty log file.
 
-    Confirms that the system behaves correctly when the log file exists but is empty,
-    raising `LogKeyNotFoundError`.
+    Given: An AppendOnlyLogStorage with an empty log file
+    When: Attempting to get any key
+    Then: LogKeyNotFoundError is raised
     """
 
     # ARRANGE
@@ -328,10 +359,11 @@ def test_get_from_empty_log_raises_error(log_storage: logger.AppendOnlyLogStorag
 
 def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index: InMemoryIndex) -> None:
     """
-    Attempts to GET a key when the underlying log file does not exist.
+    Test getting a key when the log file doesn't exist.
 
-    Verifies that the storage raises `FileNotFoundError`, correctly propagating
-    the underlying OS-level error.
+    Given: An AppendOnlyLogStorage configured with a non-existent file
+    When: Attempting to get a key
+    Then: FileNotFoundError is raised
     """
 
     pytest.skip()
@@ -356,10 +388,11 @@ def test_get_from_missing_file_raises_error(log_filepath: Path, in_memory_index:
 
 def test_truncated_header_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
-    Reads a log file where a record header is incomplete.
+    Test reading a log with an incomplete record header.
 
-    Ensures the system detects a partially written header and raises `LogCorruptedError`
-    to prevent processing invalid data.
+    Given: A log file with a truncated header
+    When: Initializing AppendOnlyLogStorage
+    Then: LogCorruptedError is raised
     """
 
     pytest.skip()
@@ -382,10 +415,11 @@ def test_truncated_header_raises_corruption_error(log_file: File, in_memory_inde
 
 def test_truncated_payload_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
-    Reads a log file where a record's payload is shorter than specified in its header.
+    Test reading a log with an incomplete record payload.
 
-    Confirms that the system validates payload length against the header,
-    raising `LogCorruptedError` on a mismatch.
+    Given: A log file with a payload shorter than specified in the header
+    When: Initializing AppendOnlyLogStorage
+    Then: LogCorruptedError is raised
     """
 
     pytest.skip()
@@ -412,10 +446,11 @@ def test_truncated_payload_raises_corruption_error(log_file: File, in_memory_ind
 
 def test_garbage_data_raises_corruption_error(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
-    Reads a log file containing random, invalid binary data instead of structured records.
+    Test reading a log file containing random invalid data.
 
-    Tests the system's resilience to severe corruption, ensuring it raises
-    `LogCorruptedError` instead of crashing or returning incorrect data.
+    Given: A log file with random binary data instead of valid records
+    When: Initializing AppendOnlyLogStorage
+    Then: LogCorruptedError is raised
     """
 
     pytest.skip()
@@ -431,9 +466,11 @@ def test_garbage_data_raises_corruption_error(log_file: File, in_memory_index: I
 
 def test_multiple_keys_store_and_retrieve_correctly(log_storage: logger.AppendOnlyLogStorage) -> None:
     """
-    Writes multiple distinct key-value pairs and verifies each one can be retrieved.
+    Test storing and retrieving multiple distinct keys.
 
-    Ensures that the storage can manage multiple keys simultaneously without interference.
+    Given: An empty AppendOnlyLogStorage
+    When: Multiple distinct key-value pairs are written
+    Then: Each key can be retrieved with its correct value
     """
 
     # ARRANGE
@@ -450,10 +487,11 @@ def test_multiple_keys_store_and_retrieve_correctly(log_storage: logger.AppendOn
 
 def test_key_operations_do_not_affect_others(log_storage: logger.AppendOnlyLogStorage) -> None:
     """
-    Performs operations (SET, DELETE) on one key and then verifies the value of another.
+    Test operation isolation between different keys.
 
-    Guarantees that operations are correctly scoped to a single key and have no side
-    effects on other keys in the log.
+    Given: An AppendOnlyLogStorage with multiple keys set
+    When: Operations are performed on one key
+    Then: Other keys remain unaffected
     """
 
     # ARRANGE
@@ -471,10 +509,11 @@ def test_key_operations_do_not_affect_others(log_storage: logger.AppendOnlyLogSt
 
 def test_directory_as_filepath_raises_error(tmp_path: Path, in_memory_index: InMemoryIndex) -> None:
     """
-    Initializes the storage engine with a path that points to a directory.
+    Test initializing storage with a directory path instead of a file.
 
-    Confirms that the system fails gracefully with an `IsADirectoryError` when
-    attempting file operations on a directory.
+    Given: A path pointing to a directory
+    When: Attempting to initialize AppendOnlyLogStorage
+    Then: IsADirectoryError is raised
     """
 
     pytest.skip()
@@ -489,10 +528,11 @@ def test_directory_as_filepath_raises_error(tmp_path: Path, in_memory_index: InM
 
 def test_interleaved_operations_maintain_key_integrity(log_storage: logger.AppendOnlyLogStorage) -> None:
     """
-    Performs a sequence of mixed SET and DELETE operations on multiple keys.
+    Test complex interleaved operations on multiple keys.
 
-    Verifies that the final state of each key is correct, proving the engine can
-    handle a complex, realistic workload.
+    Given: An empty AppendOnlyLogStorage
+    When: Performing mixed SET and DELETE operations on multiple keys
+    Then: The final state of each key is correct
     """
 
     # ARRANGE
@@ -514,10 +554,11 @@ def test_interleaved_operations_maintain_key_integrity(log_storage: logger.Appen
 
 def test_partial_write_does_not_corrupt_existing_data(log_file: File, in_memory_index: InMemoryIndex) -> None:
     """
-    Simulates a crash by writing a valid log followed by a partial, incomplete record.
+    Test recovery after a partial write (simulated crash).
 
-    Verifies that a GET on a key from the valid part of the log still succeeds,
-    showing resilience to write failures.
+    Given: A log file with valid data followed by a partial, incomplete record
+    When: Reading data from the valid portion of the log
+    Then: The valid data can still be retrieved successfully
     """
 
     pytest.skip()
